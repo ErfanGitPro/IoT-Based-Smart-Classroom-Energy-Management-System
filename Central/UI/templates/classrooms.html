@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-md-4">
+        <div class="card p-4 border-0">
+            <h4 class="fw-bold mb-4">Manage Room</h4>
+            <form action="/classrooms" method="POST">
+                <input type="hidden" name="is_edit" id="is_edit" value="false">
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">Room ID</label>
+                    <input type="text" name="room_id" id="f-rid" class="form-control" required placeholder="e.g., 101A">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">Capacity</label>
+                    <input type="number" name="capacity" class="form-control" required min="1" max="1000">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">Thermal Loss Rate</label>
+                    <input type="number" step="0.01" name="thermal_loss_rate" class="form-control" min="0.0" max="1.0" required value="0.4">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small fw-bold">ThingSpeak Write API Key</label>
+                    <input type="text" name="thingspeak_api_key" id="f-tskey" class="form-control" placeholder="e.g., RO10XMA7HROJ..." maxlength="50">
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label text-muted small fw-bold d-block">Hardware Features</label>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="has_camera" id="hasCamera">
+                        <label class="form-check-label" for="hasCamera">Camera</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="has_projector" id="hasProjector">
+                        <label class="form-check-label" for="hasProjector">Projector</label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="has_pcs" id="hasPcs">
+                        <label class="form-check-label" for="hasPcs">PCs</label>
+                    </div>
+                    <input type="hidden" name="has_ventilation" id="hasVent" value="false">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Save Room</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="col-md-8">
+        <div class="card p-4 border-0 mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h4 class="fw-bold mb-0">Active Classrooms</h4>
+                <button id="reloadBtn" class="btn btn-sm btn-outline-primary" onclick="reloadClassroomData()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead class="table-light">
+                        <tr class="small text-muted">
+                            <th>ID</th><th>Cap</th><th>Features</th><th>Efficiency</th><th>Status</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if not classrooms %}<tr><td colspan="6" class="text-center text-muted py-4">No rooms found.</td></tr>{% endif %}
+                        {% for r in classrooms %}
+                        <tr>
+                            <td class="fw-bold text-primary">{{ r['room_id'] }}</td>
+                            <td>{{ r['capacity'] }}</td>
+                            <td>
+                                {% if r['has_camera'] %}<span class="badge bg-info-subtle text-info">Cam</span>{% endif %}
+                                {% if r['has_projector'] %}<span class="badge bg-secondary-subtle text-secondary">Proj</span>{% endif %}
+                                {% if r['has_pcs'] %}<span class="badge bg-warning-subtle text-warning">PCs</span>{% endif %}
+                                {% if r['has_ventilation'] %}<span class="badge bg-success-subtle text-success">Vent</span>{% endif %}
+                            </td>
+                            <td id="eff-{{ r['room_id'] }}">
+                                <span class="fw-bold">{{ r['avg_efficiency_score']|round(1) }}%</span>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-muted configured-room-status" data-room-id="{{ r['room_id'] }}">Checking...</span>
+                            </td>
+                            <td>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-light text-warning" onclick="editRoom('{{ r['room_id'] }}', {{ r['capacity'] }}, {{ 'true' if r['has_camera'] else 'false' }}, {{ 'true' if r['has_projector'] else 'false' }}, {{ 'true' if r['has_pcs'] else 'false' }}, {{ 'true' if r['has_ventilation'] else 'false' }}, {{ r['thermal_loss_rate'] }}, '{{ r['thingspeak_api_key'] or '' }}')"><i class="fas fa-edit"></i></button>
+                                    <form action="/delete_classroom" method="POST" class="d-inline" onsubmit="return confirm('Delete {{ r['room_id'] }}?');">
+                                        <input type="hidden" name="room_id" value="{{ r['room_id'] }}">
+                                        <button type="submit" class="btn btn-sm btn-light text-danger"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card p-4 border-0">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="fw-bold mb-0"><i class="fas fa-search me-2 text-primary"></i>Network Scan</h5>
+                <button class="btn btn-sm btn-primary" id="scanBtn" onclick="scanDevices()">Scan Network</button>
+            </div>
+            <div id="scanStatus" class="alert alert-info d-none mb-3"><i class="fas fa-spinner fa-spin"></i> Finding devices...</div>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead class="table-light"><tr class="small text-muted"><th>Room ID</th><th>Detected Sensors</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody id="scan-body"><tr><td colspan="4" class="text-center text-muted py-3">No scan results yet.</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function parseTimestamp(raw) {
+    if (!raw) return null;
+    let value = String(raw).trim();
+    if (value.includes(' ') && !value.includes('T')) value = value.replace(' ', 'T');
+    const hasTimezone = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(value);
+    if (!hasTimezone) value = value + 'Z';
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function secondsSince(raw) {
+    const dt = parseTimestamp(raw);
+    if (!dt) return null;
+    return Math.max(0, (Date.now() - dt.getTime()) / 1000);
+}
+
+function editRoom(id, cap, cam, proj, pcs, vent, loss, tskey) {
+    document.getElementById('is_edit').value = 'true';
+    document.getElementById('f-rid').value = id;
+    document.querySelector('input[name="capacity"]').value = cap;
+    document.querySelector('input[name="thermal_loss_rate"]').value = loss;
+    document.getElementById('hasCamera').checked = cam;
+    document.getElementById('hasProjector').checked = proj;
+    document.getElementById('hasPcs').checked = pcs;
+    document.getElementById('hasVent').value = vent;
+    document.getElementById('f-tskey').value = tskey;
+}
+
+async function refreshConfiguredStatuses() {
+    const statusEls = document.querySelectorAll('.configured-room-status');
+    if (!statusEls.length) return;
+    try {
+        const health = await fetch('/api/system_health').then(r => r.json());
+        const freshLimit = Number(health.fresh_data_max_age_seconds || 30);
+        for (let el of statusEls) {
+            const rid = el.dataset.roomId;
+            const state = await fetch(`/api/latest_state?room_id=${encodeURIComponent(rid)}`).then(r => r.json());
+            const ageSecs = secondsSince(state ? state.timestamp : null);
+            const isOnline = ageSecs !== null && ageSecs <= freshLimit;
+            el.className = `badge ${isOnline ? 'bg-success' : 'bg-danger'}`;
+            el.textContent = isOnline ? 'Online' : 'Offline';
+        }
+    } catch (e) { console.error(e); }
+}
+
+async function refreshEfficiencyValues() {
+    const res = await fetch('/api/classrooms');
+    const payload = await res.json();
+    (payload.classrooms || []).forEach(r => {
+        const cell = document.getElementById(`eff-${r.room_id}`);
+        if (cell) cell.innerHTML = `<span class="fw-bold">${Number(r.avg_efficiency_score).toFixed(1)}%</span>`;
+    });
+}
+
+async function reloadClassroomData() {
+    const btn = document.getElementById('reloadBtn');
+    btn.disabled = true;
+    await fetch('/api/update_metrics', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    await Promise.all([refreshEfficiencyValues(), refreshConfiguredStatuses()]);
+    btn.disabled = false;
+}
+
+async function scanDevices() {
+    const btn = document.getElementById('scanBtn');
+    const tbody = document.getElementById('scan-body');
+    btn.disabled = true;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3"><i class="fas fa-spinner fa-spin"></i> Scanning...</td></tr>';
+    try {
+        const res = await fetch('/api/scan_devices');
+        const devices = await res.json();
+        if (devices.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-3">No devices found.</td></tr>';
+        } else {
+            tbody.innerHTML = devices.map(d => {
+                const badges = (d.types || []).map(t => `<span class="badge bg-primary-subtle text-primary me-1">${t}</span>`).join('');
+                return `<tr><td><strong>${d.room_id}</strong></td><td>${badges}</td>
+                    <td><span class="badge bg-success">active</span></td>
+                    <td><button class="btn btn-sm btn-primary" onclick="useDevice('${d.room_id}', '${d.types.join(',')}')">Select</button></td></tr>`;
+            }).join('');
+        }
+    } catch (err) { tbody.innerHTML = `<tr><td colspan="4" class="text-danger">Scan failed</td></tr>`; }
+    btn.disabled = false;
+}
+
+function useDevice(roomId, typesStr) {
+    document.getElementById('f-rid').value = roomId;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.addEventListener('DOMContentLoaded', refreshConfiguredStatuses);
+</script>
+{% endblock %}

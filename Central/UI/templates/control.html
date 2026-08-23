@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card p-4 border-0">
+            <h3 class="fw-bold mb-4">🎛️ Manual Overrides</h3>
+            <div class="row align-items-center g-3">
+                <div class="col-md-4">
+                    <label class="form-label text-muted small fw-bold">Select Active Room</label>
+                    <select id="roomSelect" class="form-select shadow-sm">
+                        <option value="">Choose a classroom...</option>
+                        {% for r in classrooms %}
+                        <option value="{{ r.room_id }}" {% if room == r.room_id %}selected{% endif %}>{{ r.room_id }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-8">
+                    <div class="d-flex justify-content-md-end gap-4">
+                        <div class="text-center">
+                            <p class="text-muted mb-0 small">Temperature</p>
+                            <h4 class="fw-bold mb-0" id="liveTemp">--°C</h4>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-muted mb-0 small">Occupancy</p>
+                            <h4 class="fw-bold mb-0" id="liveOcc">--</h4>
+                        </div>
+                        <div class="text-center">
+                            <p class="text-muted mb-0 small">Network</p>
+                            <span id="mqttStatus" class="badge bg-light text-muted">Checking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h5 class="fw-bold mb-3"><i class="fas fa-terminal me-2 text-primary"></i>Device Controls</h5>
+<div class="row g-3 mb-5" id="controlRow">
+    <div class="col-md-2 col-6"><button id="btnAc" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="toggleAc(this)" disabled>❄️ AC</button></div>
+    <div class="col-md-2 col-6"><button id="btnFan" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="cycleFan(this)" disabled>💨 Fan</button></div>
+    <div class="col-md-2 col-6"><button id="btnPrecool" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="togglePrecool(this)" disabled>🧊 Precool</button></div>
+    <div class="col-md-2 col-6"><button id="btnVent" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="toggleVent(this)" disabled>🌬️ Vent</button></div>
+    <div class="col-md-2 col-6"><button id="btnLampFront" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="toggleLamp('lamp_front', this)" disabled>💡 Front</button></div>
+    <div class="col-md-2 col-6"><button id="btnLampBack" class="btn btn-light w-100 py-3 fw-bold shadow-sm" onclick="toggleLamp('lamp_back', this)" disabled>💡 Back</button></div>
+</div>
+
+<div class="card p-4 border-0">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="fw-bold mb-0">📜 Command Logs</h5>
+        <button class="btn btn-sm btn-outline-danger" onclick="clearAllLogs()">Clear History</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table align-middle" id="logsTable">
+            <thead class="table-light">
+                <tr class="small text-muted"><th>Time</th><th>Room</th><th>Device</th><th>Action</th><th>Status</th><th class="text-end">Actions</th></tr>
+            </thead>
+            <tbody id="logsBody">
+                <tr><td colspan="6" class="text-center text-muted py-3">Select a room to view history.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .btn-state-on { background-color: var(--primary-color) !important; color: #fff !important; }
+    /* Speed Specific Colors */
+    .fan-low { background-color: #4cc9f0 !important; color: #fff !important; border-color: #4cc9f0 !important; }
+    .fan-med { background-color: #4361ee !important; color: #fff !important; border-color: #4361ee !important; }
+    .fan-high { background-color: #3a0ca3 !important; color: #fff !important; border-color: #3a0ca3 !important; }
+    
+    .precool-active { background-color: #f72585 !important; color: #fff !important; border: none; }
+    .btn-loading::after { content: '...'; }
+</style>
+<script>
+    let currentRoom = document.getElementById('roomSelect').value;
+    let statePoller = null; 
+    let logsPoller = null;
+
+    document.getElementById('roomSelect').addEventListener('change', (e) => {
+        currentRoom = e.target.value;
+        if(currentRoom) loadRoomState();
+    });
+
+    function parseTimestamp(raw) {
+        if (!raw) return null;
+        let value = String(raw).trim();
+        if (value.includes(' ') && !value.includes('T')) value = value.replace(' ', 'T');
+        const hasTimezone = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(value);
+        if (!hasTimezone) value = value + 'Z';
+        const dt = new Date(value);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+
+    function secondsSince(raw) {
+        const dt = parseTimestamp(raw);
+        if (!dt) return null;
+        return Math.max(0, (Date.now() - dt.getTime()) / 1000);
+    }
+
+    function loadRoomState() {
+        fetchState(); 
+        loadLogs();
+        if (statePoller) clearInterval(statePoller);
+        if (logsPoller) clearInterval(logsPoller);
+        statePoller = setInterval(fetchState, 3000);
+        logsPoller = setInterval(loadLogs, 3000);
+    }
+
+    async function fetchState() {
+        try {
+            const res = await fetch(`/api/latest_state?room_id=${currentRoom}&t=${Date.now()}`);
+            const data = await res.json();
+            
+            const healthRes = await fetch(`/api/system_health?room_id=${currentRoom}&t=${Date.now()}`);
+            const health = await healthRes.json();
+            
+            const freshLimit = Number(health.fresh_data_max_age_seconds || 30);
+            const ageSecs = secondsSince(data ? data.timestamp : null);
+            const isOnline = ageSecs !== null && ageSecs <= freshLimit && health.room_data_fresh;
+            
+            updateUI(data, isOnline);
+            
+            const m = document.getElementById('mqttStatus');
+            if (isOnline) {
+                m.textContent = 'Online'; 
+                m.className = 'badge bg-success-subtle text-success';
+            } else {
+                m.textContent = 'Offline'; 
+                m.className = 'badge bg-danger-subtle text-danger';
+            }
+        } catch(e) { 
+            const m = document.getElementById('mqttStatus');
+            m.textContent = 'Offline'; 
+            m.className = 'badge bg-danger-subtle text-danger';
+            updateUI({}, false);
+        }
+    }
+
+    function updateUI(data, isOnline = true) {
+        document.getElementById('liveTemp').textContent = (isOnline && data.temperature) ? `${data.temperature}°C` : '--°C';
+        document.getElementById('liveOcc').textContent = isOnline ? (data.occupancy_count ?? '--') : '--';
+
+        let acStatus = 'OFF', fanStatus = 'OFF', isPrecool = false;
+        if (isOnline) {
+            try {
+                let acData = data.ac_state;
+                if (typeof acData === 'string' && acData.trim().startsWith('{')) acData = JSON.parse(acData);
+                acStatus = (acData?.status || acData || 'OFF').toString().toUpperCase();
+                fanStatus = (acData?.fan || 'OFF').toString().toUpperCase();
+                isPrecool = acStatus === 'PRECOOL';
+            } catch { acStatus = 'OFF'; }
+        }
+
+        const isAcOn = isOnline && acStatus !== 'OFF';
+        
+        const acBtn = document.getElementById('btnAc');
+        acBtn.disabled = !isOnline;
+        acBtn.textContent = `❄️ AC ${isPrecool ? 'PRECOOL' : acStatus}`;
+        acBtn.className = `btn w-100 py-3 fw-bold ${isAcOn ? 'btn-state-on' : 'btn-light'}`;
+
+        const fanBtn = document.getElementById('btnFan');
+        fanBtn.disabled = !isOnline || !isAcOn; 
+        fanBtn.textContent = `💨 Fan ${fanStatus}`;
+        
+        // Dynamic color application based on status
+        fanBtn.className = 'btn w-100 py-3 fw-bold';
+        if (isOnline && fanStatus === 'LOW') fanBtn.classList.add('fan-low');
+        else if (isOnline && fanStatus === 'MEDIUM') fanBtn.classList.add('fan-med');
+        else if (isOnline && fanStatus === 'HIGH') fanBtn.classList.add('fan-high');
+        else fanBtn.classList.add('btn-light');
+
+        const preBtn = document.getElementById('btnPrecool');
+        preBtn.disabled = !isOnline || !isAcOn;
+        preBtn.textContent = '🧊 Precool';
+        preBtn.className = `btn w-100 py-3 fw-bold ${(isOnline && isPrecool) ? 'precool-active' : 'btn-light'}`;
+
+        const ventSt = isOnline ? (data.vent_state || 'CLOSED').toUpperCase() : 'CLOSED';
+        const ventBtn = document.getElementById('btnVent');
+        ventBtn.disabled = !isOnline;
+        ventBtn.textContent = `🌬️ Vent ${ventSt}`;
+        ventBtn.className = `btn w-100 py-3 fw-bold ${(isOnline && ventSt === 'OPEN') ? 'btn-state-on' : 'btn-light'}`;
+
+        setLampBtn('btnLampFront', isOnline ? (data.lamp_front_state || data.lamp_state || 'OFF') : 'OFF', isOnline);
+        setLampBtn('btnLampBack', isOnline ? (data.lamp_back_state || data.lamp_state || 'OFF') : 'OFF', isOnline);
+    }
+
+    function setLampBtn(id, val, isOnline = true) {
+        const btn = document.getElementById(id); btn.disabled = !isOnline;
+        const isOn = isOnline && val.toUpperCase() === 'ON';
+        btn.textContent = `💡 ${id.includes('Front') ? 'Front' : 'Back'} ${isOn ? 'ON' : 'OFF'}`;
+        btn.className = `btn w-100 py-3 fw-bold ${isOn ? 'btn-state-on' : 'btn-light'}`;
+    }
+
+    async function sendCmd(device, action, btn) {
+        if (btn) btn.classList.add('btn-loading');
+        try {
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: new URLSearchParams({room_id: currentRoom, device, action})
+            });
+            fetchState(); 
+            loadLogs();
+        } finally { 
+            if (btn) btn.classList.remove('btn-loading'); 
+        }
+    }
+
+    async function toggleAc(btn) { 
+        const txt = btn.textContent;
+        await sendCmd('ac', (txt.includes('ON') || txt.includes('PRECOOL')) ? 'OFF' : 'ON', btn); 
+    }
+
+    // Fixed Cycle Logic: Ensures internal state updates and specific commands are sent
+    async function cycleFan(btn) {
+        const cur = btn.textContent.split('Fan ')[1].trim().toUpperCase();
+        
+        let next = 'LOW';
+        if (cur === 'LOW') next = 'MEDIUM';
+        else if (cur === 'MEDIUM') next = 'HIGH';
+        else if (cur === 'HIGH') next = 'LOW'; // Resolves "stuck at high" issue
+        
+        await sendCmd('ac', next, btn);
+    }
+
+    async function togglePrecool(btn) {
+        const isPre = btn.textContent.includes('ON') || btn.textContent.includes('PRECOOL');
+        await sendCmd('ac', isPre ? 'LOW' : 'PRECOOL', btn);
+    }
+
+    async function toggleVent(btn) { 
+        const isOp = btn.textContent.includes('OPEN');
+        await sendCmd('ventilation', isOp ? 'CLOSE' : 'OPEN', btn); 
+    }
+
+    async function toggleLamp(dev, btn) {
+        await sendCmd(dev, btn.textContent.includes('ON') ? 'OFF' : 'ON', btn);
+    }
+
+    async function loadLogs() {
+        if(!currentRoom) return;
+        const res = await fetch(`/api/control_logs?room_id=${currentRoom}`);
+        const logs = await res.json();
+        const tbody = document.getElementById('logsBody');
+        tbody.innerHTML = logs.slice(0, 10).map(l => `
+            <tr><td>${new Date(l.timestamp).toLocaleTimeString()}</td>
+            <td>${l.room_id}</td><td><span class="badge bg-light text-dark">${l.device}</span></td>
+            <td>${l.action}</td><td><span class="badge bg-success-subtle text-success">${l.status}</span></td>
+            <td class="text-end"><button class="btn btn-sm btn-light" onclick="deleteLog(${l.id})">🗑️</button></td></tr>
+        `).join('') || '<tr><td colspan="6" class="text-center">No logs</td></tr>';
+    }
+
+    async function deleteLog(id) {
+        await fetch('/api/delete_log', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id}) });
+        loadLogs();
+    }
+
+    async function clearAllLogs() {
+        if(!confirm('Clear logs?')) return;
+        await fetch('/api/clear_logs', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({room_id: currentRoom}) });
+        loadLogs();
+    }
+
+    if(currentRoom) loadRoomState();
+</script>
+{% endblock %}

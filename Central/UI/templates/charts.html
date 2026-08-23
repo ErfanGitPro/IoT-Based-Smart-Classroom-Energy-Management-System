@@ -1,0 +1,309 @@
+{% extends 'base.html' %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .stat-card-inner { border-radius: 15px; border: none; transition: transform 0.2s; }
+    .icon-shape { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .chart-container { background: white; border-radius: 15px; padding: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.05); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold mb-0">📊 Performance Analytics</h3>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card p-3 border-0 h-100">
+            <label class="form-label text-muted small fw-bold">Select Classroom</label>
+            <select id="c-room" class="form-select room-selector shadow-sm">
+                <option value="">Choose room...</option>
+                {% for r in classrooms %}<option value="{{ r['room_id'] }}">{{ r['room_id'] }}</option>{% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 border-0 h-100">
+            <div class="d-flex align-items-center">
+                <div class="icon-shape bg-success-subtle text-success me-3"><i class="fas fa-leaf"></i></div>
+                <div>
+                    <p class="text-muted mb-0 small">Efficiency</p>
+                    <h4 class="mb-0 fw-bold" id="eff-val">N/A</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 border-0 h-100">
+            <div class="d-flex align-items-center">
+                <div class="icon-shape bg-primary-subtle text-primary me-3"><i class="fas fa-trophy"></i></div>
+                <div>
+                    <p class="text-muted mb-0 small">Rank</p>
+                    <h4 class="mb-0 fw-bold" id="rank-val">N/A</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card p-3 border-0 h-100">
+            <div class="d-flex align-items-center">
+                <div class="icon-shape bg-info-subtle text-info me-3"><i class="fas fa-cog"></i></div>
+                <div>
+                    <p class="text-muted mb-0 small">Current Mode</p>
+                    <h4 class="mb-0 fw-bold" id="mode-val">N/A</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-12">
+        <div class="card p-4 chart-container">
+            <h5 class="fw-bold mb-4">Efficiency Trend</h5>
+            <canvas id="effChart" height="80"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card p-4 chart-container">
+            <h5 class="fw-bold mb-4">Sensors & Analytics</h5>
+            <canvas id="mainChart" height="200"></canvas>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card p-4 chart-container">
+            <h5 class="fw-bold mb-4">Actuators & State History</h5>
+            <canvas id="actuatorChart" height="200"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let mainChart = null;
+let actuatorChart = null;
+let effChart = null;
+
+let mainHiddenDatasets = {};
+let actuatorHiddenDatasets = {};
+let effHiddenDatasets = {};
+
+function parseTimestamp(raw) {
+    if (!raw) return null;
+    let value = String(raw).trim();
+    if (value.includes(' ') && !value.includes('T')) value = value.replace(' ', 'T');
+    const hasTimezone = /([zZ]|[+\-]\d{2}:?\d{2})$/.test(value);
+    if (!hasTimezone) value = value + 'Z';
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function secondsSince(raw) {
+    const dt = parseTimestamp(raw);
+    if (!dt) return null;
+    return Math.max(0, (Date.now() - dt.getTime()) / 1000);
+}
+
+function getGradient(ctx, c1, c2) {
+    const grad = ctx.createLinearGradient(0, 0, 0, 280);
+    grad.addColorStop(0, c1);
+    grad.addColorStop(1, c2);
+    return grad;
+}
+
+function getThemeColors() {
+    return {
+        grid: 'rgba(30, 41, 59, 0.05)',
+        ticks: '#64748b',
+        tempLine: '#f59e0b',
+        outTempLine: '#8b5cf6',
+        occLine: '#3b82f6',
+        motionLine: '#ef4444',
+        effLine: '#10b981'
+    };
+}
+
+function getActuatorYRange(modeVisible) {
+    return { min: 2, max: modeVisible ? 6 : 3 };
+}
+
+function formatTimeLabels(labels) {
+    const fmt = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    return (labels || []).map(ts => {
+        if (!ts) return '';
+        const raw = String(ts).trim();
+        let parsed = null;
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(raw)) {
+            parsed = new Date(raw.replace(' ', 'T') + 'Z');
+        } else {
+            parsed = new Date(raw);
+        }
+        if (!Number.isNaN(parsed.getTime())) return fmt.format(parsed);
+        return raw;
+    });
+}
+
+async function load() {
+    const rid = document.getElementById('c-room').value;
+    if (!rid) {
+        document.getElementById('eff-val').textContent = 'N/A';
+        document.getElementById('rank-val').textContent = 'N/A';
+        document.getElementById('mode-val').textContent = 'N/A';
+        return;
+    }
+
+    const query = new URLSearchParams();
+    query.set('room_id', rid);
+    query.set('_ts', Date.now().toString());
+    
+    try {
+        const d = await fetch(`/api/chart_data?${query.toString()}`, { cache: 'no-store' }).then(r => r.json());
+        if (d.error) return;
+
+        const health = await fetch(`/api/system_health?room_id=${rid}&t=${Date.now()}`).then(r => r.json());
+        const freshLimit = Number(health.fresh_data_max_age_seconds || 30);
+        const lastTs = d.labels && d.labels.length ? d.labels[d.labels.length - 1] : null;
+        const ageSecs = secondsSince(lastTs);
+        const isOnline = ageSecs !== null && ageSecs <= freshLimit && health.room_data_fresh;
+
+        // Update Stat Cards
+        document.getElementById('eff-val').textContent = (d.efficiency !== null && d.efficiency !== undefined) ? d.efficiency + '%' : 'N/A';
+        document.getElementById('rank-val').textContent = d.ranking ? '#' + d.ranking : 'N/A';
+        const latestMode = (d.mode_labels && d.mode_labels.length) ? d.mode_labels[d.mode_labels.length - 1] : 'N/A';
+        document.getElementById('mode-val').textContent = isOnline ? latestMode : 'Offline';
+
+        const formattedLabels = formatTimeLabels(d.labels || []);
+        const colors = getThemeColors();
+
+        // Efficiency Chart
+        if (effChart) {
+            effChart.data.datasets.forEach((ds, i) => effHiddenDatasets[i] = !effChart.isDatasetVisible(i));
+            effChart.destroy();
+        }
+        const effCtx = document.getElementById('effChart').getContext('2d');
+        const effHistorySeries = (d.efficiency_series || []).map(v => Number(v || 0));
+        effChart = new Chart(effCtx, {
+            type: 'line',
+            data: {
+                labels: d.efficiency_labels ? formatTimeLabels(d.efficiency_labels) : formattedLabels,
+                datasets: [{
+                    label: 'Efficiency %',
+                    data: effHistorySeries,
+                    borderColor: colors.effLine,
+                    backgroundColor: getGradient(effCtx, 'rgba(16,185,129,0.2)', 'rgba(16,185,129,0)'),
+                    fill: true,
+                    tension: 0.4,
+                    hidden: effHiddenDatasets[0]
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { min: 0, max: 100, ticks: { color: colors.ticks }, grid: { color: colors.grid } },
+                    x: { ticks: { color: colors.ticks }, grid: { display: false } }
+                }
+            }
+        });
+
+        // Main Sensor Chart
+        if (mainChart) {
+            mainChart.data.datasets.forEach((ds, i) => mainHiddenDatasets[i] = !mainChart.isDatasetVisible(i));
+            mainChart.destroy();
+        }
+        const mainCtx = document.getElementById('mainChart').getContext('2d');
+        mainChart = new Chart(mainCtx, {
+            type: 'line',
+            data: {
+                labels: formattedLabels,
+                datasets: [
+                    { label: 'Temp (°C)', data: d.temperatures, borderColor: colors.tempLine, tension: 0.3, hidden: mainHiddenDatasets[0] },
+                    { label: 'Outside Temp', data: d.outside_temperatures, borderColor: colors.outTempLine, borderDash: [5, 5], tension: 0.3, hidden: mainHiddenDatasets[1] },
+                    { label: 'Occupancy', data: d.occupancy, borderColor: colors.occLine, tension: 0.3, hidden: mainHiddenDatasets[2] },
+                    { label: 'Motion', data: d.motion, borderColor: colors.motionLine, stepped: true, yAxisID: 'yMotion', hidden: mainHiddenDatasets[3] }
+                ]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: colors.grid } },
+                    yMotion: { position: 'right', min: 0, max: 1, display: false },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+
+        // Actuator Chart
+        if (actuatorChart) {
+            actuatorChart.data.datasets.forEach((ds, i) => actuatorHiddenDatasets[i] = !actuatorChart.isDatasetVisible(i));
+            actuatorChart.destroy();
+        }
+
+        const actCtx = document.getElementById('actuatorChart').getContext('2d');
+        const actuatorState = arr => (arr || []).map(v => (v === 1 ? 3 : 2));
+        const modeState = (d.mode || []).map(v => v === 1 ? 5 : (v === 2 ? 6 : 4));
+
+        const isModeVisible = actuatorHiddenDatasets[4] === false || (actuatorHiddenDatasets[4] === undefined);
+        const actuatorRange = getActuatorYRange(isModeVisible);
+
+        actuatorChart = new Chart(actCtx, {
+            type: 'line',
+            data: {
+                labels: formattedLabels,
+                datasets: [
+                // '#06b6d4'
+                    { label: 'AC', data: actuatorState(d.ac), borderColor: '#10b981', stepped: true, hidden: actuatorHiddenDatasets[0] },
+                    { label: 'Lamp Front', data: actuatorState(d.lamp_front), borderColor: '#eab308', stepped: true, hidden: actuatorHiddenDatasets[1] },
+                    { label: 'Lamp Back', data: actuatorState(d.lamp_back), borderColor: '#3b82f6', stepped: true, hidden: actuatorHiddenDatasets[2] },
+                    { label: 'Vent', data: actuatorState(d.vent), borderColor: '#8b5cf6', stepped: true, hidden: actuatorHiddenDatasets[3] },
+                    { label: 'Mode', data: modeState, borderColor: '#ef4444', stepped: true, hidden: !isModeVisible }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        onClick: function(e, legendItem, legend) {
+                            const index = legendItem.datasetIndex;
+                            const ci = legend.chart;
+                            const meta = ci.getDatasetMeta(index);
+                            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
+                            
+                            const currentModeVisible = ci.isDatasetVisible(4);
+                            const range = getActuatorYRange(currentModeVisible);
+                            ci.options.scales.y.min = range.min;
+                            ci.options.scales.y.max = range.max;
+                            ci.update();
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        min: actuatorRange.min,
+                        max: actuatorRange.max,
+                        ticks: {
+                            callback: function(value) {
+                                const labels = { 2: 'OFF', 3: 'ON', 4: 'PRED', 5: 'PREC', 6: 'MAN' };
+                                return labels[value] || '';
+                            }
+                        },
+                        grid: { color: colors.grid }
+                    },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    } catch (err) { console.error(err); }
+}
+
+document.getElementById('c-room').addEventListener('change', () => {
+    mainHiddenDatasets = {}; actuatorHiddenDatasets = {}; effHiddenDatasets = {};
+    load();
+});
+
+load();
+setInterval(load, 5000);
+</script>
+{% endblock %}

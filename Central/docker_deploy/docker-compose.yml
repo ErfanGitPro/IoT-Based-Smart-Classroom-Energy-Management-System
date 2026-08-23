@@ -1,0 +1,196 @@
+# Central/docker-compose.yml
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../mosquitto_data:/mosquitto/data
+    environment:
+      - TZ=Europe/Rome
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  catalog-service:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/catalog-service:latest
+    command: python -u catalog_service.py
+    ports:
+      - "9090:9090"
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt-broker}
+      - CATALOG_PORT=${CATALOG_PORT:-9090}
+      - TZ=Europe/Rome
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  db-adaptor:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/db-adaptor:latest
+    command: python -u db_adaptor.py
+    ports:
+      - "5002:5002"
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt-broker}
+      - CATALOG_URL=http://catalog-service:9090
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  stats-service:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/stats-service:latest
+    command: python -u statistics_service.py
+    ports:
+      - "5003:5003"
+    environment:
+      - EFFICIENCY_SENSITIVITY=${EFFICIENCY_SENSITIVITY}
+      - CATALOG_URL=http://catalog-service:9090
+      - TELEGRAM_BOT_URL=http://telegram-bot:5004/api/alert
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  telegram-bot:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/telegram-bot:latest
+    command: python -u telegram_dashboard.py
+    dns:
+      - 8.8.8.8
+    ports:
+      - "5004:5004"
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - CATALOG_URL=http://catalog-service:9090
+      - UI_BASE_URL=http://dashboard-ui:5000
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+
+
+  weather-service:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/weather-service:latest
+    command: python -u weather_service.py
+    dns:
+      - 8.8.8.8
+    ports:
+      - "5005:5005"
+    environment:
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED}
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt-broker}
+      - TELEGRAM_BOT_URL=http://telegram-bot:5004/api/alert
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  thingspeak-adaptor:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/thingspeak-adaptor:latest
+    command: python -u thingspeak_adaptor.py
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt-broker}
+      - THINGSPEAK_WRITE_API_KEY=${THINGSPEAK_WRITE_API_KEY}
+      - CATALOG_URL=http://catalog-service:9090
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - iot-network
+
+  dashboard-ui:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+    image: iot_smart_classroom_center/dashboard-ui:latest
+    command: python -u UI/app.py
+    working_dir: /app
+    ports:
+      - "5000:5000"
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER:-mqtt-broker}
+      - MANUAL_HOLD_THRESHOLD=${MANUAL_HOLD_THRESHOLD}
+      - CATALOG_SERVICE=http://catalog-service:9090
+      - STATS_SERVICE=http://stats-service:5003
+      - DB_SERVICE=http://db-adaptor:5002
+      - WEATHER_SERVICE=http://weather-service:5005
+      - TZ=Europe/Rome
+    volumes:
+      - ../data:/app/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    networks:
+      - iot-network
+
+networks:
+  iot-network:
+    driver: bridge

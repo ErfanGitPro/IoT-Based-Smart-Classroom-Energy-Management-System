@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Classroom Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --accent-color: #4cc9f0;
+            --bg-light: #f8f9fa;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .sidebar {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            min-height: 100vh;
+            color: white;
+            transition: all 0.3s;
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 4px 15px;
+            transition: all 0.2s;
+        }
+
+        .sidebar .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .sidebar .nav-link.active {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3);
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s;
+            margin-bottom: 25px;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card .icon-shape {
+            width: 48px;
+            height: 48px;
+            background: rgba(67, 97, 238, 0.1);
+            color: var(--primary-color);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .navbar {
+            background-color: white !important;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .room-selector {
+            max-width: 300px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container-fluid p-0">
+        <div class="row g-0">
+            <div class="col-md-2 sidebar d-none d-md-block">
+                <div class="p-4 text-center">
+                    <h4 class="fw-bold"><i class="fas fa-microchip me-2"></i>Smart Classroom Management</h4>
+                </div>
+                <ul class="nav flex-column mt-3">
+                    <li class="nav-item"><a class="nav-link active" href="/"><i
+                                class="fas fa-home me-2"></i>Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/charts"><i
+                                class="fas fa-chart-line me-2"></i>Analytics</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/schedule"><i
+                                class="fas fa-calendar-alt me-2"></i>Schedules</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/classrooms"><i
+                                class="fas fa-door-open me-2"></i>Classrooms</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/control"><i
+                                class="fas fa-sliders-h me-2"></i>Control Panel</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/topology"><i
+                                class="fas fa-network-wired me-2"></i>System Topology</a></li>
+                </ul>
+            </div>
+
+            <div class="col-md-10">
+                <nav class="navbar navbar-expand-lg navbar-light px-4">
+                    <div class="container-fluid">
+                        <span class="navbar-brand fw-bold">Overview</span>
+                        <div class="d-flex align-items-center">
+                            <select class="form-select room-selector me-3" id="room-select">
+                                <option value="">🏢 All Classrooms</option>
+                            </select>
+                            <div class="dropdown">
+                                <button class="btn btn-light rounded-circle p-2" type="button"
+                                    data-bs-toggle="dropdown">
+                                    <i class="fas fa-bell"></i>
+                                    <span id="alert-badge"
+                                        class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                                        style="display:none">0</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end p-0" id="alert-list"
+                                    style="width: 300px; max-height: 400px; overflow-y: auto;">
+                                    <li>
+                                        <div class="p-3 text-center text-muted">No new alerts</div>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </nav>
+
+                <div class="main-content">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="card stat-card p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1">System Status</p>
+                                        <h4 class="mb-0" id="system-status-text">Checking...</h4>
+                                    </div>
+                                    <div class="icon-shape"><i class="fas fa-signal"></i></div>
+                                </div>
+                                <div class="mt-3 small">
+                                    <span class="status-dot" id="ui-mqtt-status"></span> UI Connection<br>
+                                    <span class="status-dot" id="edge-mqtt-status"></span> Device Network
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card stat-card p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1">Average Temp</p>
+                                        <h4 class="mb-0"><span id="avg-temp">--</span>°C</h4>
+                                    </div>
+                                    <div class="icon-shape bg-warning-subtle text-warning"><i
+                                            class="fas fa-thermometer-half"></i></div>
+                                </div>
+                                <div class="mt-3 small text-muted" id="outside-temp-label">Outside: --°C</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card stat-card p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1">Total Occupancy</p>
+                                        <h4 class="mb-0" id="total-occupancy">--</h4>
+                                    </div>
+                                    <div class="icon-shape bg-info-subtle text-info"><i class="fas fa-users"></i></div>
+                                </div>
+                                <div class="mt-3 small text-muted" id="active-rooms-label">-- Rooms Active</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card stat-card p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <p class="text-muted mb-1">Energy Score</p>
+                                        <h4 class="mb-0" id="energy-score">--%</h4>
+                                    </div>
+                                    <div class="icon-shape bg-success-subtle text-success"><i class="fas fa-leaf"></i>
+                                    </div>
+                                </div>
+                                <div class="progress mt-3" style="height: 6px;">
+                                    <div id="energy-progress" class="progress-bar bg-success" role="progressbar"
+                                        style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="card h-100">
+                                <div class="card-header bg-white border-0 py-3">
+                                    <h5 class="mb-0 fw-bold">📊 Smart Report</h5>
+                                </div>
+                                <div class="card-body">
+                                    <div id="report-text" class="p-3 bg-light rounded"
+                                        style="white-space: pre-line; min-height: 200px;">
+                                        Analyzing system data...
+                                    </div>
+                                    <div class="mt-4">
+                                        <h6 class="fw-bold mb-3">Live Resource Usage</h6>
+                                        <div class="row text-center">
+                                            <div class="col-4">
+                                                <div class="p-3 border rounded">
+                                                    <i class="fas fa-snowflake text-primary mb-2"></i>
+                                                    <div class="small text-muted">Active ACs</div>
+                                                    <div class="h5 mb-0" id="active-acs">0</div>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="p-3 border rounded">
+                                                    <i class="fas fa-lightbulb text-warning mb-2"></i>
+                                                    <div class="small text-muted">Lights ON</div>
+                                                    <div class="h5 mb-0" id="active-lamps">0</div>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="p-3 border rounded">
+                                                    <i class="fas fa-wind text-info mb-2"></i>
+                                                    <div class="small text-muted">Open Vents</div>
+                                                    <div class="h5 mb-0" id="open-vents">0</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card h-100">
+                                <div class="card-header bg-white border-0 py-3">
+                                    <h5 class="mb-0 fw-bold">📅 Today's Schedule</h5>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Course</th>
+                                                    <th>Room</th>
+                                                    <th>Time</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="today-schedule-body">
+                                                <tr>
+                                                    <td colspan="4" class="text-center py-4">Loading schedule...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentRoomId = '';
+
+        // Fetch classrooms for selector
+        fetch('/api/classrooms')
+            .then(res => res.json())
+            .then(data => {
+                const select = document.getElementById('room-select');
+                data.classrooms.forEach(room => {
+                    const opt = document.createElement('option');
+                    opt.value = room.room_id;
+                    opt.textContent = room.room_id;
+                    select.appendChild(opt);
+                });
+            });
+
+        document.getElementById('room-select').addEventListener('change', (e) => {
+            currentRoomId = e.target.value;
+            updateDashboard();
+        });
+
+        function updateDashboard() {
+            // 1. Update System Health and MQTT Dots
+            fetch('/api/system_health' + (currentRoomId ? '?room_id=' + currentRoomId : ''))
+                .then(res => res.json())
+                .then(data => {
+                    const uiDot = document.getElementById('ui-mqtt-status');
+                    const edgeDot = document.getElementById('edge-mqtt-status');
+
+                    uiDot.className = 'status-dot ' + (data.ui_mqtt_connected ? 'bg-success' : 'bg-danger');
+                    edgeDot.className = 'status-dot ' + (data.edge_mqtt_connected ? 'bg-success' : 'bg-danger');
+
+                    document.getElementById('system-status-text').innerHTML =
+                        (data.ui_mqtt_connected && data.edge_mqtt_connected) ?
+                            '<span class="text-success">Online</span>' : '<span class="text-danger">Issues Detected</span>';
+                })
+                .catch(err => {
+                    console.error("Health Error:", err);
+                    document.getElementById('system-status-text').innerHTML = '<span class="text-danger">Offline</span>';
+                });
+
+            // 2. Update Today's Schedule Table
+            fetch('/api/schedules/today')
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('today-schedule-body');
+                    if (!data || data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No classes today</td></tr>';
+                        return;
+                    }
+                    const rows = data.map(s => `
+                        <tr>
+                            <td>${s.course_name || 'Unknown'}</td>
+                            <td>${s.room_id || 'Unassigned'}</td>
+                            <td>${s.start_time ? s.start_time.substring(11, 16) : '--:--'}</td>
+                            <td><span class="badge ${s.status === 'cancelled' ? 'bg-danger' : (s.status === 'delayed' ? 'bg-warning text-dark' : 'bg-success')}">${s.status ? s.status.charAt(0).toUpperCase() + s.status.slice(1) : 'Active'}</span></td>
+                        </tr>                    `).join('');
+                    tbody.innerHTML = rows;
+                })
+                .catch(err => {
+                    console.error("Schedule Error:", err);
+                    document.getElementById('today-schedule-body').innerHTML = '<tr><td colspan="4" class="text-center text-danger">Error loading schedule</td></tr>';
+                });
+
+            // 3. Update Report and Stats
+            fetch('/api/report')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('report-text').textContent = data.report_text;
+                    const lines = data.report_text.split('\n');
+                    lines.forEach(line => {
+                        if (line.includes('Average Temp:')) document.getElementById('avg-temp').textContent = line.split(':')[1].trim().replace('°C', '');
+                        if (line.includes('Total Occupancy:')) document.getElementById('total-occupancy').textContent = line.split(':')[1].trim().split(' ')[0];
+                        if (line.includes('Rooms Online:')) document.getElementById('active-rooms-label').textContent = line.split(':')[1].trim();
+                        if (line.includes('Active AC Units:')) document.getElementById('active-acs').textContent = line.split(':')[1].trim();
+                        if (line.includes('Active Lamps:')) document.getElementById('active-lamps').textContent = line.split(':')[1].trim();
+                        if (line.includes('Open Vents:')) document.getElementById('open-vents').textContent = line.split(':')[1].trim();
+                    });
+                });
+
+            // 4. Update Weather and Efficiency
+            fetch('/api/weather/latest')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.outside_temperature) {
+                        document.getElementById('outside-temp-label').textContent = `Outside: ${data.outside_temperature.toFixed(1)}°C (${data.city || 'Local'})`;
+                    }
+                });
+
+            fetch('/api/chart_data' + (currentRoomId ? '?room_id=' + currentRoomId : ''))
+                .then(res => res.json())
+                .then(data => {
+                    if (data.efficiency !== null && data.efficiency !== undefined) {
+                        document.getElementById('energy-score').textContent = data.efficiency + '%';
+                        document.getElementById('energy-progress').style.width = data.efficiency + '%';
+                    } else {
+                        document.getElementById('energy-score').textContent = '--%';
+                        document.getElementById('energy-progress').style.width = '0%';
+                    }
+                });
+
+            // 5. Update Alerts
+            fetch('/api/alerts')
+                .then(res => res.json())
+                .then(data => {
+                    const badge = document.getElementById('alert-badge');
+                    const list = document.getElementById('alert-list');
+                    badge.style.display = data.count > 0 ? 'block' : 'none';
+                    badge.textContent = data.count;
+                    if (data.alerts.length > 0) {
+                        list.innerHTML = data.alerts.map(a => `
+                            <li class="p-2 border-bottom">
+                                <div class="d-flex align-items-center">
+                                    <div class="ms-2">
+                                        <div class="small fw-bold text-${a.severity}">${a.message}</div>
+                                        <div class="text-muted" style="font-size: 0.7rem">${a.timestamp || ''}</div>
+                                    </div>
+                                </div>
+                            </li>
+                        `).join('');
+                    } else {
+                        list.innerHTML = '<li><div class="p-3 text-center text-muted">No new alerts</div></li>';
+                    }
+                });
+        }
+
+        // Initial load and periodic refresh
+        updateDashboard();
+        setInterval(updateDashboard, 5000);
+    </script>
+</body>
+
+</html>

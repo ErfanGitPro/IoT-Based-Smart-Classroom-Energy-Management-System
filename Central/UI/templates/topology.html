@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% block title %}System Topology & Health{% endblock %}
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card p-4 border-0 shadow-sm">
+            <h3 class="fw-bold mb-1">🖥️ System Topology</h3>
+            <p class="text-muted mb-0">Live status of registered microservices, controllers, and edge sensors resolved via the Catalog Service.</p>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-5">
+    <!-- Microservices Section -->
+    <div class="col-md-6">
+        <div class="card p-4 border-0 h-100 shadow-sm">
+            <h5 class="fw-bold mb-4"><i class="fas fa-server text-primary me-2"></i>Microservices Directory</h5>
+            <div class="list-group list-group-flush" id="services-list">
+                <div class="text-center py-4 text-muted">Loading microservices registry...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edge Devices Section -->
+    <div class="col-md-6">
+        <div class="card p-4 border-0 h-100 shadow-sm">
+            <h5 class="fw-bold mb-4"><i class="fas fa-network-wired text-success me-2"></i>Classroom Controllers & Edge Devices</h5>
+            <div class="list-group list-group-flush" id="devices-list">
+                <div class="text-center py-4 text-muted">Loading edge devices registry...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function fetchTopology() {
+        // Query the catalog information exposed by the REST endpoints
+        fetch('/api/scan_devices') // This retrieves parsed device registry
+            .then(res => res.json())
+            .then(devices => {
+                const devList = document.getElementById('devices-list');
+                if (devices.length === 0) {
+                    devList.innerHTML = '<div class="text-center py-4 text-muted">No active devices registered in Catalog.</div>';
+                    return;
+                }
+                devList.innerHTML = devices.map(d => `
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">🚪 Room: ${d.room_id}</h6>
+                            <small class="text-muted">Types: ${d.types.join(', ') || 'General'}</small>
+                        </div>
+                        <div>
+                            <span class="badge ${d.status === 'online' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} px-3 py-2">
+                                <i class="fas ${d.status === 'online' ? 'fa-check-circle' : 'fa-exclamation-triangle'} me-1"></i>
+                                ${d.status.toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+                `).join('');
+            })
+            .catch(err => {
+                console.error("Device topology loading error:", err);
+                document.getElementById('devices-list').innerHTML = '<div class="text-center py-4 text-danger">Error fetching device registry.</div>';
+            });
+
+        // Query catalog/all from backend logic directly to extract core microservices
+        // Let's call the Catalog REST API from the proxy (or fetch all registry elements)
+        fetch('/api/system_health')
+            .then(res => res.json())
+            .then(health => {
+                const srvList = document.getElementById('services-list');
+                
+                // Construct standard list of microservices and health states
+                const services = [
+                    { name: 'Catalog Registry Service', status: 'online', details: 'Core REST endpoint running on port 9090' },
+                    { name: 'MQTT Broker', status: health.ui_mqtt_connected ? 'online' : 'offline', details: 'Message Bus running on port 1883' },
+                    { name: 'Web UI Server', status: 'online', details: 'Flask application running on port 5000' },
+                    { name: 'Edge Network Data Link', status: health.edge_mqtt_connected ? 'online' : 'offline', details: `Heartbeat age status vs max ${health.fresh_data_max_age_seconds}s limit` }
+                ];
+
+                srvList.innerHTML = services.map(s => `
+                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-3">
+                        <div>
+                            <h6 class="fw-bold mb-1">${s.name}</h6>
+                            <small class="text-muted">${s.details}</small>
+                        </div>
+                        <div>
+                            <span class="badge ${s.status === 'online' ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} px-3 py-2">
+                                <i class="fas ${s.status === 'online' ? 'fa-check-circle' : 'fa-exclamation-triangle'} me-1"></i>
+                                ${s.status.toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+                `).join('');
+            })
+            .catch(err => {
+                console.error("Services topology loading error:", err);
+                document.getElementById('services-list').innerHTML = '<div class="text-center py-4 text-danger">Error fetching service status.</div>';
+            });
+    }
+
+    fetchTopology();
+    setInterval(fetchTopology, 5000);
+</script>
+{% endblock %}

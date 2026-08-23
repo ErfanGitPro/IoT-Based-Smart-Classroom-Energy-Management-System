@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Smart Classroom IoT{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --accent-color: #4cc9f0;
+            --bg-light: #f0f2f5;
+            --sidebar-bg: #1e293b;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: all 0.3s;
+        }
+
+        .sidebar {
+            background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+            min-height: 100vh;
+            color: white;
+            transition: all 0.3s;
+            position: sticky;
+            top: 0;
+        }
+
+        .sidebar .nav-link {
+            color: rgba(255, 255, 255, 0.7);
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin: 4px 15px;
+            transition: all 0.2s;
+            border: none;
+            background: none;
+            text-align: left;
+            width: 85%;
+        }
+
+        .sidebar .nav-link:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .sidebar .nav-link.active {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3);
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05);
+            margin-bottom: 25px;
+        }
+
+        .navbar {
+            background-color: white !important;
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border: none;
+            border-radius: 8px;
+            padding: 10px 20px;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+        }
+
+        .badge {
+            border-radius: 6px;
+            padding: 5px 10px;
+        }
+
+        /* Style for form inputs to match theme */
+        .form-control,
+        .form-select {
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+            padding: 10px 15px;
+        }
+
+        .form-control:focus {
+            box-shadow: 0 0 0 0.25rem rgba(67, 97, 238, 0.15);
+            border-color: var(--primary-color);
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+    <div class="container-fluid p-0">
+        <div class="row g-0">
+            <div class="col-md-2 sidebar d-none d-md-block">
+                <div class="p-4 text-center">
+                    <h4 class="fw-bold"><i class="fas fa-microchip me-2"></i>Smart Classroom Management</h4>
+                </div>
+                <ul class="nav flex-column mt-3">
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/' %}active{% endif %}" href="/"><i
+                                class="fas fa-home me-2"></i>Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/charts' %}active{% endif %}"
+                            href="/charts"><i class="fas fa-chart-line me-2"></i>Analytics</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/schedule' %}active{% endif %}"
+                            href="/schedule"><i class="fas fa-calendar-alt me-2"></i>Schedules</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/classrooms' %}active{% endif %}"
+                            href="/classrooms"><i class="fas fa-door-open me-2"></i>Classrooms</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/control' %}active{% endif %}"
+                            href="/control"><i class="fas fa-sliders-h me-2"></i>Control Panel</a></li>
+                    <li class="nav-item"><a class="nav-link {% if request.path == '/topology' %}active{% endif %}"
+                            href="/topology"><i class="fas fa-network-wired me-2"></i>System Topology</a></li>
+                </ul>
+            </div>
+
+            <div class="col-md-10">
+                <nav class="navbar navbar-expand-lg navbar-light px-4">
+                    <div class="container-fluid">
+                        <span class="navbar-brand fw-bold">Smart Classroom Management</span>
+                        <div class="d-flex align-items-center">
+                            <span class="text-muted me-3 small"><i class="fas fa-clock me-1"></i> <span
+                                    id="clock-span"></span></span>
+                        </div>
+                    </div>
+                </nav>
+
+                <div class="main-content">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                    {% for category, message in messages %}
+                    <div
+                        class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show border-0 shadow-sm mb-4">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                    {% endwith %}
+
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function updateClock() {
+            const now = new Date();
+            const clock = document.getElementById('clock-span');
+            if (clock) clock.innerText = now.toLocaleTimeString();
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

@@ -1,0 +1,91 @@
+# Edge/docker-compose.yml
+services:
+  sensors:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+      target: light
+    image: iot_smart_classroom_edge/sensors:latest
+    command: python -u device_connector.py
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER_HOST}
+      - ROOM_ID=${ROOM_ID}
+      - CATALOG_URL=${CATALOG_URL}
+      - TEMP_MODE=${TEMP_MODE}
+      - MOTION_START_HOUR=${MOTION_START_HOUR}
+      - MOTION_END_HOUR=${MOTION_END_HOUR}
+      - TZ=Europe/Rome
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - edge-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  controller:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+      target: light
+    image: iot_smart_classroom_edge/controller:latest
+    command: python -u control_module.py
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER_HOST}
+      - ROOM_ID=${ROOM_ID}
+      - CATALOG_URL=${CATALOG_URL}
+      - SENSOR_MODE=none
+      - DEFAULT_AC_PRECOOL_TEMP=${DEFAULT_AC_PRECOOL_TEMP}
+      - THRESHOLD_BASE=${THRESHOLD_BASE}
+      - HOLDUP_BAND=${HOLDUP_BAND}
+      - MANUAL_MODE_HOLD_SECONDS=${MANUAL_MODE_HOLD_SECONDS}
+      - TZ=Europe/Rome
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - edge-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  camera:
+    build:
+      context: ../
+      dockerfile: docker_deploy/Dockerfile
+      target: rpi
+    image: iot_smart_classroom_edge/camera:latest
+    command: python -u camera_module.py
+    environment:
+      - MQTT_BROKER=${MQTT_BROKER_HOST}
+      - ROOM_ID=${ROOM_ID}
+      - CATALOG_URL=${CATALOG_URL}
+      - HAS_CAMERA=${HAS_CAMERA}
+      - MOTION_SENSOR_TIMEOUT=${MOTION_SENSOR_TIMEOUT}
+      - CAMERA_ACTIVE_SECONDS=${CAMERA_ACTIVE_SECONDS}
+      - CAMERA_SLEEP_SECONDS=${CAMERA_SLEEP_SECONDS}
+      - CAM_MODE=${CAM_MODE:-real}
+      - OCCUPANTS=${OCCUPANTS:-30}
+      - TZ=Europe/Rome
+    devices:
+      - "/dev/video0:/dev/video0"
+    privileged: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    networks:
+      - edge-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  edge-network:
+    driver: bridge
