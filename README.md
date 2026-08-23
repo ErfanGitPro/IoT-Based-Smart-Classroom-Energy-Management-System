@@ -24,33 +24,38 @@ The project follows a microservices architecture coordinated via **MQTT** and **
 
 ```mermaid
 graph TD
-    subgraph Central Server
+    subgraph "Central Server"
         UI[Flask Web Dashboard - Port 5000]
         Catalog[CherryPy Resource Catalog - Port 9090]
         DB[SQLite Database Adaptor]
         Stats[Statistics Service]
+        Weather[Weather Service - Port 5005]
         Telegram[Telegram Bot REST Webhook - Port 5004]
         ThingSpeak[ThingSpeak Cloud Adaptor]
     end
 
-    subgraph Message Broker
+    subgraph "Message Broker"
         MQTT[Eclipse Mosquitto Broker]
     end
 
-    subgraph Edge Devices (Classrooms)
-        Connector[Device Connector: PIR & Temp]
+    subgraph "Edge Devices (Classrooms)"
+        Connector[Device Connector: Motion & Temp]
         YOLO[YOLOv8 Occupancy Camera]
         EdgeCtrl[Edge Room Controller]
     end
 
-    %% Communication Flows
+    %% Communication Flows (MQTT Connections)
     Connector -->|Publish Telemetry| MQTT
     YOLO -->|Publish Occupancy| MQTT
-    EdgeCtrl -->|Subscribe Control / Publish State| MQTT
-    MQTT <--> Central Server
+    EdgeCtrl <-->|MQTT Pub/Sub| MQTT
+    MQTT <--> UI
+    MQTT <--> DB
+    MQTT <--> Weather
+    MQTT <--> ThingSpeak
     
-    %% Webhooks & API
+    %% Webhooks & HTTP APIs
     Stats -->|HTTP POST Alerts| Telegram
+    Weather -->|HTTP POST Alerts| Telegram
     Telegram -->|Push Notifications| UserTelegram[Telegram User Client]
     ThingSpeak -->|POST Telemetry| Cloud[ThingSpeak Cloud Analytics]
     
@@ -58,6 +63,24 @@ graph TD
     Connector -->|HTTP Register| Catalog
     EdgeCtrl -->|HTTP Register| Catalog
     EdgeCtrl -.->|HTTP GET Schedules| UI
+
+    %% Color Styling
+    style UI fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style Catalog fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style DB fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style Stats fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style Weather fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style Telegram fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+    style ThingSpeak fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0369a1
+
+    style MQTT fill:#ffedd5,stroke:#ea580c,stroke-width:2px,color:#c2410c
+
+    style Connector fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#15803d
+    style YOLO fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#15803d
+    style EdgeCtrl fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#15803d
+
+    style UserTelegram fill:#faf5ff,stroke:#9333ea,stroke-width:2px,color:#6b21a8
+    style Cloud fill:#fdf2f8,stroke:#db2777,stroke-width:2px,color:#9d174d
 ```
 
 ### 🧩 Key Components
@@ -87,7 +110,11 @@ graph TD
 
 ### Intelligent Energy Optimization
 * **Edge-side Pre-cooling**: Edge controllers parse schedule times from the central server and calculate dynamic pre-cooling runtimes before classes start using:
-  $$\text{duration} = \min(60, \max(5, \text{temp\_diff} \times 3.0 \times (1.0 + \text{thermal\_loss})))$$
+
+$$
+\mathit{duration} = \min \Big( 60, \max \big( 5, \mathit{TempDiff} \times 3.0 \times (1.0 + \mathit{ThermalLoss}) \big) \Big)
+$$
+
 * **Weather-Aware Ventilation**: Suggests free-cooling dampers activation if outdoor weather is optimal.
 * **Duty-Cycle Protection**: Restricts excessive toggling of HVAC compressors to extend service life.
 * **Retained States**: Publishes crucial control topics with MQTT `retain=True` to recover actuator statuses instantly.
@@ -95,7 +122,10 @@ graph TD
 ### Automated Classroom Assignment
 * **Constraint-Aware Matching**: Evaluates physical equipment, capacity, and student count.
 * **Score Allocation**: Rates classrooms dynamically:
-  $$\text{Score} = \text{Avg\_Efficiency} - (\text{Capacity} - \text{Students}) \times 0.1 - \text{Thermal\_Loss} \times 15 - \frac{\text{Overrides}}{5}$$
+
+$$
+\mathit{Score} = \mathit{AvgEfficiency} - (\mathit{Capacity} - \mathit{Students}) \times 0.1 - \mathit{ThermalLoss} \times 15.0 - \frac{\mathit{Overrides}}{5.0}
+$$
 
 ### Centralized Remote Control
 * **Web Dashboard**: Modern view transition tabs tracking schedules, efficiency, and analytics charts.
